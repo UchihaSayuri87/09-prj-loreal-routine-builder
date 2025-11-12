@@ -69,6 +69,9 @@ function displayProducts(products) {
   `;
     })
     .join("");
+
+  // attach error handlers so broken images show a friendly inline fallback
+  attachImageErrorHandlers(productsContainer);
 }
 
 /* Utility: basic escaping for inserted HTML (simple for beginner-level) */
@@ -144,6 +147,9 @@ function renderSelectedProducts() {
   `
     )
     .join("");
+
+  // attach error handlers for selected-product thumbnails
+  attachImageErrorHandlers(selectedProductsListEl);
 }
 
 /* Allow removal of items directly from the Selected Products list */
@@ -364,4 +370,40 @@ function appendChatMessage(who, text) {
 /* Utility: short truncation */
 function truncate(str = "", n = 100) {
   return str.length > n ? str.slice(0, n - 1) + "…" : str;
+}
+
+/* New helper: attachImageErrorHandlers(rootEl)
+   - rootEl: element containing <img> elements (e.g., productsContainer or selectedProductsListEl)
+   - replaces broken images with an inline SVG data URL placeholder */
+function attachImageErrorHandlers(rootEl) {
+  const FALLBACK_SVG =
+    "data:image/svg+xml;utf8," +
+    encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300">
+         <rect width="100%" height="100%" fill="#fafafa"/>
+         <g fill="#666" font-family="Arial, Helvetica, sans-serif" font-size="16">
+           <text x="50%" y="45%" dominant-baseline="middle" text-anchor="middle">Image unavailable</text>
+           <text x="50%" y="60%" dominant-baseline="middle" text-anchor="middle" font-size="12">Please try reloading or check the file</text>
+         </g>
+       </svg>`
+    );
+
+  const imgs = (rootEl || document).querySelectorAll("img");
+  imgs.forEach((img) => {
+    // avoid re-wrapping the same handler
+    if (img.dataset.errorHandlerAttached) return;
+    img.dataset.errorHandlerAttached = "1";
+
+    img.addEventListener("error", function () {
+      // set fallback and ensure it fits the layout
+      this.removeAttribute("src"); // avoid repeated error cycles
+      this.src = FALLBACK_SVG;
+      this.style.objectFit = "contain";
+    });
+
+    // if src is empty or the image failed to load earlier, proactively set fallback
+    if (!img.src || (img.complete && img.naturalWidth === 0)) {
+      img.src = FALLBACK_SVG;
+    }
+  });
 }
