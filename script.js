@@ -9,7 +9,7 @@ const generateRoutineBtn = document.getElementById("generateRoutine");
 /* Show initial placeholder until user selects a category */
 productsContainer.innerHTML = `
   <div class="placeholder-message">
-    Select a category to view products
+    Select a category to view L'Oréal products
   </div>
 `;
 
@@ -28,30 +28,6 @@ async function loadProducts() {
   const response = await fetch("products.json");
   const data = await response.json();
   return data.products;
-}
-
-/* Try to load makeup products from external API.
-   If it fails, return empty array so caller can fallback to local data. */
-async function loadMakeupAPIProducts() {
-  try {
-    const url = "http://makeup-api.herokuapp.com/api/v1/products.json";
-    const res = await fetch(url);
-    if (!res.ok) throw new Error("Makeup API request failed");
-    const data = await res.json();
-    // Map the external API shape to our simpler product shape (take first 30 items)
-    return data.slice(0, 30).map((p, idx) => ({
-      id: `makeup-${p.id || idx}`,
-      brand: p.brand || "Unknown",
-      name: p.name || p.product_type || "Makeup Product",
-      category: "makeup",
-      image: p.image_link || "",
-      description:
-        p.description || p.long_description || p.product_description || "",
-    }));
-  } catch (err) {
-    console.error("Makeup API error:", err);
-    return [];
-  }
 }
 
 /* Create HTML for displaying product cards and attach click handler via event delegation */
@@ -143,27 +119,29 @@ function renderSelectedProducts() {
 }
 
 /* Filter and display products when category changes.
-   If the category is "makeup", try the external Makeup API first. */
+   Always use local products.json and only show products whose brand
+   contains "L'Oréal" (case-insensitive). */
 categoryFilter.addEventListener("change", async (e) => {
   const selectedCategory = e.target.value;
 
-  if (selectedCategory === "makeup") {
-    // try external API
-    const externalProducts = await loadMakeupAPIProducts();
-    if (externalProducts.length > 0) {
-      displayProducts(externalProducts);
-      return;
-    }
-    // if external failed, fall through to local data
-  }
-
+  // Load local data only
   const products = await loadProducts();
 
-  /* filter() creates a new array containing only products 
-     where the category matches what the user selected */
-  const filteredProducts = products.filter(
-    (product) => product.category === selectedCategory
+  // Keep only L'Oréal brand products (match "L'Oréal" or "L'Oréal Paris" etc.)
+  const lorealProducts = products.filter(
+    (p) =>
+      String(p.brand || "")
+        .toLowerCase()
+        .includes("l'oréal".toLowerCase()) ||
+      String(p.brand || "")
+        .toLowerCase()
+        .includes("loreal")
   );
+
+  // If the filter is empty or not provided, show all L'Oréal products
+  const filteredProducts = selectedCategory
+    ? lorealProducts.filter((product) => product.category === selectedCategory)
+    : lorealProducts;
 
   displayProducts(filteredProducts);
 });
