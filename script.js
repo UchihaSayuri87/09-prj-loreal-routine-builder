@@ -244,6 +244,34 @@ generateRoutineBtn.addEventListener("click", async () => {
   await callOpenAIAndDisplay();
 });
 
+/* New: on page load show all L'Oréal products and render empty selected list */
+window.addEventListener("DOMContentLoaded", async () => {
+  renderSelectedProducts(); // show "No products selected" placeholder
+  try {
+    const products = await loadProducts();
+    // show L'Oréal products by default
+    const lorealProducts = products.filter(
+      (p) =>
+        String(p.brand || "")
+          .toLowerCase()
+          .includes("l'oréal".toLowerCase()) ||
+        String(p.brand || "")
+          .toLowerCase()
+          .includes("loreal")
+    );
+    displayProducts(lorealProducts);
+  } catch (err) {
+    console.error("Failed to load products on start:", err);
+    productsContainer.innerHTML = `<div class="placeholder-message">Unable to load products.</div>`;
+  }
+
+  // optional friendly assistant greeting
+  appendChatMessage(
+    "Assistant",
+    "Hi — select products and click Generate Routine, or ask me a question."
+  );
+});
+
 /* Call OpenAI Chat Completions endpoint using model "gpt-4o" and the messages array.
    The student should create a secrets.js file that sets window.OPENAI_API_KEY = "sk-..."; */
 async function callOpenAIAndDisplay() {
@@ -257,6 +285,7 @@ async function callOpenAIAndDisplay() {
     return;
   }
 
+  // Show a removable "Thinking..." message
   appendChatMessage("Assistant", "Thinking...");
 
   try {
@@ -283,6 +312,7 @@ async function callOpenAIAndDisplay() {
     // We expect data.choices[0].message.content per your instructions
     const assistantMessage = data?.choices?.[0]?.message?.content;
     if (assistantMessage) {
+      // Remove the "Thinking..." placeholder (appendChatMessage handles removal too)
       // Add assistant reply to messages history
       chatMessages.push({ role: "assistant", content: assistantMessage });
       appendChatMessage("Assistant", assistantMessage);
@@ -301,12 +331,27 @@ async function callOpenAIAndDisplay() {
 
 /* Helper to append messages to the chat window (simple rendering) */
 function appendChatMessage(who, text) {
-  // remove any "Thinking..." placeholder
+  // remove any existing "Thinking..." placeholder
   const thinking = chatWindow.querySelector(".thinking");
   if (thinking) thinking.remove();
 
   const el = document.createElement("div");
   el.style.marginBottom = "12px";
+
+  // mark the 'Thinking...' assistant message so it can be removed before the real reply
+  if (who === "Assistant" && text === "Thinking...") {
+    el.classList.add("thinking");
+    el.style.opacity = "0.8";
+    el.innerHTML = `<strong>${escapeHtml(
+      who
+    )}:</strong> <div style="margin-top:6px; font-style:italic; color:#666;">${escapeHtml(
+      text
+    )}</div>`;
+    chatWindow.appendChild(el);
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+    return;
+  }
+
   el.innerHTML = `<strong>${escapeHtml(
     who
   )}:</strong> <div style="margin-top:6px; white-space:pre-wrap;">${escapeHtml(
