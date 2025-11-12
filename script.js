@@ -42,21 +42,32 @@ function displayProducts(products) {
   }
 
   productsContainer.innerHTML = products
-    .map(
-      (product) => `
-    <div class="product-card" data-id="${product.id}" data-brand="${
-        product.brand
-      }" data-name="${escapeHtml(product.name)}" data-desc="${escapeHtml(
-        product.description
-      )}" data-image="${product.image}">
-      <img src="${product.image}" alt="${escapeHtml(product.name)}">
-      <div class="product-info">
-        <h3>${escapeHtml(product.name)}</h3>
-        <p>${escapeHtml(product.brand)}</p>
+    .map((product) => {
+      const isSelected = selectedProducts.some(
+        (p) => String(p.id) === String(product.id)
+      );
+      return `
+    <div class="product-card ${isSelected ? "selected" : ""}" data-id="${
+        product.id
+      }" data-brand="${product.brand}" data-name="${escapeHtml(
+        product.name
+      )}" data-desc="${escapeHtml(product.description)}" data-image="${
+        product.image
+      }">
+      <div style="display:flex; gap:12px; align-items:flex-start; width:100%;">
+        <img src="${product.image}" alt="${escapeHtml(product.name)}" />
+        <div class="product-info" style="position:relative; flex:1;">
+          <h3>${escapeHtml(product.name)}</h3>
+          <p>${escapeHtml(product.brand)}</p>
+          <button class="info-btn" aria-expanded="false" style="margin-top:8px; font-size:13px; padding:6px 8px; cursor:pointer;">Details</button>
+          <div class="desc" style="display:none; margin-top:8px; font-size:13px; color:#444;">${escapeHtml(
+            product.description
+          )}</div>
+        </div>
       </div>
     </div>
-  `
-    )
+  `;
+    })
     .join("");
 }
 
@@ -69,8 +80,22 @@ function escapeHtml(str = "") {
     .replaceAll('"', "&quot;");
 }
 
-/* Toggle selection when clicking on a product card (delegation) */
+/* Toggle selection when clicking on a product card (delegation)
+   Also handle info button clicks to reveal descriptions without toggling selection */
 productsContainer.addEventListener("click", (e) => {
+  // Info button toggles description only
+  const infoBtn = e.target.closest(".info-btn");
+  if (infoBtn) {
+    const infoWrapper = infoBtn.closest(".product-info");
+    const desc = infoWrapper.querySelector(".desc");
+    const expanded = infoBtn.getAttribute("aria-expanded") === "true";
+    infoBtn.setAttribute("aria-expanded", String(!expanded));
+    desc.style.display = expanded ? "none" : "block";
+    e.stopPropagation();
+    return;
+  }
+
+  // Otherwise toggle selection by card
   const card = e.target.closest(".product-card");
   if (!card) return;
   const id = card.dataset.id;
@@ -85,17 +110,15 @@ productsContainer.addEventListener("click", (e) => {
   const idx = selectedProducts.findIndex((p) => p.id === id);
   if (idx === -1) {
     selectedProducts.push(product);
-    card.style.borderColor = "#000";
-    card.style.background = "#fffbe6";
+    card.classList.add("selected");
   } else {
     selectedProducts.splice(idx, 1);
-    card.style.borderColor = "#ccc";
-    card.style.background = "";
+    card.classList.remove("selected");
   }
   renderSelectedProducts();
 });
 
-/* Render the selected products list */
+/* Render the selected products list (add remove button) */
 function renderSelectedProducts() {
   if (selectedProducts.length === 0) {
     selectedProductsListEl.innerHTML = `<div class="placeholder-message">No products selected</div>`;
@@ -104,19 +127,45 @@ function renderSelectedProducts() {
   selectedProductsListEl.innerHTML = selectedProducts
     .map(
       (p) => `
-    <div class="product-card" style="flex:0 0 48%; min-height:70px; padding:8px;">
+    <div class="product-card selected-item" data-id="${
+      p.id
+    }" style="flex:0 0 48%; min-height:70px; padding:8px; align-items:center; position:relative;">
       <img src="${p.image}" alt="${escapeHtml(
         p.name
       )}" style="width:60px;height:60px;object-fit:contain;">
-      <div class="product-info">
+      <div class="product-info" style="margin-left:10px;">
         <h3 style="font-size:14px">${escapeHtml(p.name)}</h3>
         <p style="font-size:12px">${escapeHtml(p.brand)}</p>
       </div>
+      <button class="remove-btn" aria-label="Remove ${escapeHtml(
+        p.name
+      )}" style="position:absolute; right:8px; top:8px; background:#fff; border:1px solid #ccc; padding:4px 6px; cursor:pointer;">✕</button>
     </div>
   `
     )
     .join("");
 }
+
+/* Allow removal of items directly from the Selected Products list */
+selectedProductsListEl.addEventListener("click", (e) => {
+  const rem = e.target.closest(".remove-btn");
+  if (!rem) return;
+  const card = rem.closest("[data-id]");
+  if (!card) return;
+  const id = card.dataset.id;
+
+  // remove from selectedProducts
+  const idx = selectedProducts.findIndex((p) => p.id === id);
+  if (idx !== -1) selectedProducts.splice(idx, 1);
+
+  // un-highlight the corresponding product card in the grid if visible
+  const gridCard = productsContainer.querySelector(
+    `.product-card[data-id="${CSS.escape(id)}"]`
+  );
+  if (gridCard) gridCard.classList.remove("selected");
+
+  renderSelectedProducts();
+});
 
 /* Filter and display products when category changes.
    Always use local products.json and only show products whose brand
@@ -164,8 +213,7 @@ chatForm.addEventListener("submit", async (e) => {
   await callOpenAIAndDisplay();
 });
 
-/* Generate Routine button: build a prompt summarizing selected products,
-   ask the assistant to generate a simple morning/evening routine. */
+/* Generate Routine button: build JSON payload from selected products and send to OpenAI */
 generateRoutineBtn.addEventListener("click", async () => {
   if (selectedProducts.length === 0) {
     appendChatMessage(
@@ -175,16 +223,22 @@ generateRoutineBtn.addEventListener("click", async () => {
     return;
   }
 
-  // Build a simple user message summarizing selected products
-  const productSummaries = selectedProducts
-    .map(
-      (p, i) =>
-        `${i + 1}. ${p.name} (${p.brand}) - ${truncate(p.description, 140)}`
-    )
-    .join("\n");
+  // Build JSON of selected products (only required fields)
+  const payload = selectedProducts.map((p) => ({
+    name: p.name,
+    brand: p.brand,
+    category: p.category || "unknown",
+    description: p.description || "",
+  }));
 
-  const userMessage = `I selected these products:\n${productSummaries}\n\nPlease suggest a simple, safe routine (order + when to use: AM/PM) using only these products. Keep instructions short and beginner-friendly.`;
-  appendChatMessage("You", userMessage);
+  // Create a user message that includes the JSON payload; assistant should use only these items
+  const userMessage = `Here are the selected products (JSON). Use ONLY these products to suggest a simple, safe routine (order + when to use: AM/PM). Return a short step-by-step routine and any brief notes:\n\n${JSON.stringify(
+    { selected_products: payload },
+    null,
+    2
+  )}`;
+
+  appendChatMessage("You", "Requesting routine for selected products...");
   chatMessages.push({ role: "user", content: userMessage });
 
   await callOpenAIAndDisplay();
